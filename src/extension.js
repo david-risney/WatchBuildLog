@@ -46,11 +46,13 @@ class BuildLogWatcher {
     onConfigurationChanged() {
         const config = vscode.workspace.getConfiguration('watchbuildlog');
         const newWildcards = config.get('logFilePathWildcards') || [];
+        const newProblemPatterns = config.get('problemMatcherPatterns') || [];
         
         // If wildcards changed, restart watching
-        if (JSON.stringify(newWildcards) !== JSON.stringify(this.currentWildcards)) {
+        if (JSON.stringify(newWildcards) !== JSON.stringify(this.currentWildcards) ||
+            JSON.stringify(newProblemPatterns) !== JSON.stringify(this.currentProblemPatterns)) {
             this.stopWatching();
-            if (newWildcards.length > 0) {
+            if (newWildcards.length > 0 && newProblemPatterns.length > 0) {
                 this.startWatching();
             }
         }
@@ -59,14 +61,20 @@ class BuildLogWatcher {
     startWatching() {
         const config = vscode.workspace.getConfiguration('watchbuildlog');
         const wildcards = config.get('logFilePathWildcards') || [];
+        const problemPatterns = config.get('problemMatcherPatterns') || [];
 
         if (wildcards.length === 0) {
             vscode.window.showErrorMessage('No build log file patterns configured. Please set "watchbuildlog.logFilePathWildcards" in your settings.');
             return;
         }
+        if (problemPatterns.length === 0) {
+            vscode.window.showErrorMessage('No problem matcher patterns configured. Please set "watchbuildlog.problemMatcherPatterns" in your settings.');
+            return;
+        }
 
         this.stopWatching(); // Stop any existing watchers
         this.currentWildcards = [...wildcards];
+        this.currentProblemPatterns = [...problemPatterns];
 
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!workspaceRoot) {
@@ -102,7 +110,7 @@ class BuildLogWatcher {
             try {
                 const watcher = fs.watchFile(filePath, (curr, prev) => {
                     if (curr.mtime > prev.mtime) {
-                        this.parseLogFile(filePath, true); // Parse only this specific file
+                        this.parseLogFile(filePath);
                     }
                 });
                 
@@ -115,7 +123,7 @@ class BuildLogWatcher {
 
         // Initial parse of only the most recently modified file
         if (mostRecentFile) {
-            this.parseLogFile(mostRecentFile, true); // Clear all diagnostics for fresh start
+            this.parseLogFile(mostRecentFile);
         }
 
         if (watchersStarted > 0) {
@@ -205,12 +213,16 @@ class BuildLogWatcher {
     }
 
     parseLogFile(logFilePath, clearAllDiagnostics = true) {
+        console.log(`[WatchBuildLog] Parsing log file: ${logFilePath}`);
         try {
             const content = fs.readFileSync(logFilePath, 'utf8');
-            const lines = content.split('\n');
+            // Handle CRLF and LF line endings. First check for CRLF, then fallback to LF.
+            // This ensures we handle both Windows and Unix line endings correctly
+            const lines = content.split('\r\n').length > 1 ? content.split('\r\n') : content.split('\n');
             const config = vscode.workspace.getConfiguration('watchbuildlog');
             const problemPatterns = config.get('problemMatcherPatterns') || [];
 
+            console.log(`[WatchBuildLog] File has ${lines.length} lines, using ${problemPatterns.length} problem patterns`);
             const diagnosticsMap = new Map();
 
             // Clear diagnostics for this specific file, or all files if requested
@@ -224,8 +236,13 @@ class BuildLogWatcher {
             lines.forEach((line, lineNumber) => {
                 const errorInfo = this.parseErrorLine(line, problemPatterns);
                 if (errorInfo) {
-                    const filePath = errorInfo.file || logFilePath;
-                    
+                    let filePath = errorInfo.file || logFilePath;
+                    // If filePath is relative, resolve it against the folder containing the log file
+                    if (!path.isAbsolute(filePath)) {
+                        const logDir = path.dirname(logFilePath);
+                        filePath = path.resolve(logDir, filePath);
+                    }
+
                     if (!diagnosticsMap.has(filePath)) {
                         diagnosticsMap.set(filePath, []);
                     }
@@ -256,7 +273,10 @@ class BuildLogWatcher {
                 this.diagnostics.set(vscode.Uri.file(filePath), diagnostics);
             });
 
+            console.log(`[WatchBuildLog] Parsing complete. Found ${Array.from(diagnosticsMap.values()).reduce((sum, diags) => sum + diags.length, 0)} total errors/warnings`);
+
         } catch (error) {
+            console.error(`[WatchBuildLog] Error parsing log file ${logFilePath}:`, error);
             vscode.window.showErrorMessage(`Failed to parse log file: ${error}`);
         }
     }
@@ -296,7 +316,7 @@ class BuildLogWatcher {
                 }
             } catch (error) {
                 // Invalid regex, skip this pattern
-                console.warn(`Invalid regex pattern: ${pattern.regexp}`, error);
+                console.warn(`[WatchBuildLog] Invalid regex pattern: ${pattern.regexp}`, error);
             }
         }
 
