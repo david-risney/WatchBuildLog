@@ -1,0 +1,125 @@
+{
+  "name": "watchbuildlog",
+  "displayName": "Watch Build Log",
+  "description": "Monitor build log files for errors and display them in VS Code's error pane",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "watchbuildlog.startWatching",
+        "title": "Start Watching Build Log",
+        "category": "WatchBuildLog"
+      },
+      {
+        "command": "watchbuildlog.stopWatching",
+        "title": "Stop Watching Build Log",
+        "category": "WatchBuildLog"
+      }
+    ],
+    "configuration": {
+      "title": "Watch Build Log",
+      "properties": {
+        "watchbuildlog.logFilePathWildcards": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Glob-style wildcard patterns for build log files. Patterns can be absolute paths or relative to the project root. Use '*' to match any text in a folder segment. Example: 'out/*_x64/siso.log'",
+          "scope": "resource"
+        },
+        "watchbuildlog.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start watching when VS Code opens"
+        },
+        "watchbuildlog.problemMatcherPatterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "regexp": {
+                "type": "string",
+                "description": "Regular expression pattern to match error lines"
+              },
+              "file": {
+                "type": "number",
+                "description": "Capture group index for the file path"
+              },
+              "line": {
+                "type": "number",
+                "description": "Capture group index for the line number"
+              },
+              "column": {
+                "type": "number",
+                "description": "Capture group index for the column number"
+              },
+              "severity": {
+                "type": "number",
+                "description": "Capture group index for the severity level"
+              },
+              "code": {
+                "type": "number",
+                "description": "Capture group index for the error code"
+              },
+              "message": {
+                "type": "number",
+                "description": "Capture group index for the error message"
+              }
+            },
+            "required": ["regexp"]
+          },
+          "default": [
+            {
+              "regexp": "^(.+?):(\\d+):(\\d+):\\s*(error|warning|info):\\s*(.+)$",
+              "file": 1,
+              "line": 2,
+              "column": 3,
+              "severity": 4,
+              "message": 5
+            },
+            {
+              "regexp": "^(.+?)\\((\\d+),(\\d+)\\):\\s*(error|warning)\\s+(C\\d+):\\s*(.+)$",
+              "file": 1,
+              "line": 2,
+              "column": 3,
+              "severity": 4,
+              "code": 5,
+              "message": 6
+            },
+            {
+              "regexp": "(error|warning|info):\\s*(.+)$",
+              "severity": 1,
+              "message": 2
+            }
+          ],
+          "description": "Problem matcher patterns similar to VS Code's task system. Each pattern defines a regex and capture group indices for extracting error information."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test ./test/unit/**/*.test.js",
+    "test-unit": "node --test ./test/unit/**/*.test.js",
+    "test-parser": "node --test ./test/unit/parser.test.js",
+    "test-glob": "node --test ./test/unit/glob.test.js",
+    "test-integration": "node --test ./test/unit/integration.test.js",
+    "test-edge-cases": "node --test ./test/unit/edge-cases.test.js",
+    "test-config": "node --test ./test/unit/config.test.js",
+    "test-watch": "node --test --watch ./test/unit/**/*.test.js",
+    "test-coverage": "node --test --experimental-test-coverage ./test/unit/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+}
