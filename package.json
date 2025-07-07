@@ -121,7 +121,10 @@
     "test-edge-cases": "node --test ./test/unit/edge-cases.test.js",
     "test-config": "node --test ./test/unit/config.test.js",
     "test-watch": "node --test --watch ./test/unit/**/*.test.js",
-    "test-coverage": "node --test --experimental-test-coverage ./test/unit/**/*.test.js"
+    "test-coverage": "node --test --experimental-test-coverage ./test/unit/**/*.test.js",
+    "package": "npx vsce package",
+    "install-local": "code --install-extension watchbuildlog-0.0.1.vsix",
+    "package-and-install": "npm run package && npm run install-local"
   },
   "devDependencies": {
     "@types/node": "^20.0.0"
