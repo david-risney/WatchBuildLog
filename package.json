@@ -38,13 +38,13 @@
           "items": {
             "type": "string"
           },
-          "default": [],
+          "default": ["out/*/siso_output"],
           "description": "Glob-style wildcard patterns for build log files. Patterns can be absolute paths or relative to the project root. Use '*' to match any text in a folder segment. Example: 'out/*_x64/siso.log'",
           "scope": "resource"
         },
         "watchbuildlog.autoStart": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Automatically start watching when VS Code opens"
         },
         "watchbuildlog.problemMatcherPatterns": {
@@ -85,7 +85,7 @@
           },
           "default": [
             {
-              "regexp": "^(.+?):(\\d+):(\\d+):\\s*(error|warning|info):\\s*(.+)$",
+              "regexp": "^(.*)\\((\\d+),(\\d+)\\)\\s*:\\s*([^: ]+)[^:]*:\\s*(.*)$",
               "file": 1,
               "line": 2,
               "column": 3,
@@ -93,18 +93,11 @@
               "message": 5
             },
             {
-              "regexp": "^(.+?)\\((\\d+),(\\d+)\\):\\s*(error|warning)\\s+(C\\d+):\\s*(.+)$",
+              "regexp": "^(.*)\\((\\d+)\\)\\s*:\\s*([^: ]+)[^:]*:\\s*(.*)$",
               "file": 1,
               "line": 2,
-              "column": 3,
-              "severity": 4,
-              "code": 5,
-              "message": 6
-            },
-            {
-              "regexp": "(error|warning|info):\\s*(.+)$",
-              "severity": 1,
-              "message": 2
+              "severity": 3,
+              "message": 4
             }
           ],
           "description": "Problem matcher patterns similar to VS Code's task system. Each pattern defines a regex and capture group indices for extracting error information."

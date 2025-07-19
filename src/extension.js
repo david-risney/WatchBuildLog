@@ -1,6 +1,7 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+let buildLogWatcher = null;
 
 const log = (...args) => {
     console.log('[WatchBuildLog] ', ...args);
@@ -9,7 +10,7 @@ const log = (...args) => {
 function activate(context) {
     log('extension is now active!');
 
-    const buildLogWatcher = new BuildLogWatcher();
+    buildLogWatcher = new BuildLogWatcher();
 
     // Register commands
     const startWatchingCommand = vscode.commands.registerCommand('watchbuildlog.startWatching', () => {
@@ -37,6 +38,10 @@ function activate(context) {
 }
 
 function deactivate() {
+    if (buildLogWatcher) {
+        buildLogWatcher.stopWatching();
+        buildLogWatcher = null;
+    }
     log('extension is now deactivated!');
 }
 
@@ -55,7 +60,7 @@ class BuildLogWatcher {
         }
     }
 
-    updateWatchersAndParseMostRecentLog(filePathChanged = null) {
+    updateWatchersAndParseMostRecentLog(fileChanged = false) {
         const config = vscode.workspace.getConfiguration('watchbuildlog');
         const wildcards = config.get('logFilePathWildcards') || [];
         const problemPatterns = config.get('problemMatcherPatterns') || [];
@@ -99,7 +104,7 @@ class BuildLogWatcher {
             }
             try {
                 const watcher = fs.watchFile(filePath, (curr, prev) => {
-                    this.updateWatchersAndParseMostRecentLog();
+                    this.updateWatchersAndParseMostRecentLog(true);
                 });
                 
                 this.watchers.set(filePath, watcher);
@@ -109,7 +114,7 @@ class BuildLogWatcher {
             }
         });
 
-        if (fileSetChange || filePathChanged) {
+        if (fileSetChange || fileChanged) {
             let mostRecentFile = null;
             let mostRecentTime = 0;
 
@@ -133,7 +138,6 @@ class BuildLogWatcher {
                 // so we clear old diagnostics.
                 this.diagnostics.clear();
             }
-
         }
 
         if (fileSetChange) {
@@ -147,7 +151,7 @@ class BuildLogWatcher {
             return;
         }
 
-        this.updateWatchersAndParseMostRecentLog();
+        this.updateWatchersAndParseMostRecentLog(true);
 
         console.assert(!this.intervalId, 'Interval ID should not be set when starting to watch');
         this.intervalId = setInterval(() => {
@@ -256,10 +260,13 @@ class BuildLogWatcher {
 
             this.diagnostics.clear();
 
+            let previousError = null;
+
             lines.forEach((line, lineNumber) => {
+                line = line.replace('\n', '').trim();
                 const errorInfo = this.parseErrorLine(line, problemPatterns);
                 if (errorInfo) {
-                    let filePath = errorInfo.file || logFilePath;
+                    let filePath = errorInfo.file;
                     // If filePath is relative, resolve it against the folder containing the log file
                     if (!path.isAbsolute(filePath)) {
                         const logDir = path.dirname(logFilePath);
@@ -271,23 +278,43 @@ class BuildLogWatcher {
                     }
 
                     const severity = this.mapSeverity(errorInfo.severity);
-                    const diagnostic = new vscode.Diagnostic(
-                        new vscode.Range(
-                            (errorInfo.line ? errorInfo.line - 1 : lineNumber),
-                            (errorInfo.column ? errorInfo.column - 1 : 0),
-                            (errorInfo.line ? errorInfo.line - 1 : lineNumber),
-                            (errorInfo.column ? errorInfo.column - 1 : line.length)
-                        ),
-                        errorInfo.message,
-                        severity
-                    );
+                    if (severity === 'note') {
+                        if (previousError) {
+                            if (!previousError.relatedInformation) {
+                                previousError.relatedInformation = [];
+                            }
+                            previousError.relatedInformation.push(
+                                new vscode.DiagnosticRelatedInformation(
+                                    new vscode.Location(vscode.Uri.file(filePath), new vscode.Range(
+                                        (errorInfo.line ? errorInfo.line - 1 : lineNumber),
+                                        (errorInfo.column ? errorInfo.column - 1 : 0),
+                                        (errorInfo.line ? errorInfo.line - 1 : lineNumber),
+                                        (errorInfo.column ? errorInfo.column - 1 : line.length)
+                                    )),
+                                    errorInfo.message
+                                )
+                            );
+                        }
+                    } else {
+                        const diagnostic = new vscode.Diagnostic(
+                            new vscode.Range(
+                                (errorInfo.line ? errorInfo.line - 1 : lineNumber),
+                                (errorInfo.column ? errorInfo.column - 1 : 0),
+                                (errorInfo.line ? errorInfo.line - 1 : lineNumber),
+                                (errorInfo.column ? errorInfo.column - 1 : line.length)
+                            ),
+                            errorInfo.message,
+                            severity
+                        );
+                        previousError = diagnostic;
 
-                    diagnostic.source = 'Build Log';
-                    if (errorInfo.code) {
-                        diagnostic.code = errorInfo.code;
+                        diagnostic.source = 'Build Log';
+                        if (errorInfo.code) {
+                            diagnostic.code = errorInfo.code;
+                        }
+
+                        diagnosticsMap.get(filePath).push(diagnostic);
                     }
-                    
-                    diagnosticsMap.get(filePath).push(diagnostic);
                 }
             });
 
@@ -310,7 +337,7 @@ class BuildLogWatcher {
             try {
                 const regex = new RegExp(pattern.regexp, 'i');
                 const match = line.match(regex);
-                
+
                 if (match) {
                     const errorInfo = {
                         message: pattern.message ? match[pattern.message] : line.trim()
@@ -365,6 +392,8 @@ class BuildLogWatcher {
                 return vscode.DiagnosticSeverity.Information;
             case 'hint':
                 return vscode.DiagnosticSeverity.Hint;
+            case 'note':
+                return 'note'; // Special case for notes to associate with previous errors
             default:
                 return vscode.DiagnosticSeverity.Error;
         }
