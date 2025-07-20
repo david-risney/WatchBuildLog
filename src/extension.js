@@ -60,7 +60,7 @@ class BuildLogWatcher {
         }
     }
 
-    updateWatchersAndParseMostRecentLog(fileChanged = false) {
+    getMatchedFiles(showWarnings = false) {
         const config = vscode.workspace.getConfiguration('watchbuildlog');
         const wildcards = config.get('logFilePathWildcards') || [];
         const problemPatterns = config.get('problemMatcherPatterns') || [];
@@ -80,7 +80,12 @@ class BuildLogWatcher {
         }
 
         const matchedFiles = this.findMatchingFiles(wildcards, workspaceRoot);
-        
+        return matchedFiles;
+    }
+
+    updateWatchersAndParseMostRecentLog(fileChanged = false) {
+        const matchedFiles = this.getMatchedFiles(false);
+
         if (matchedFiles.length === 0) {
             vscode.window.showWarningMessage('No files found matching the configured wildcard patterns.');
             return;
@@ -150,6 +155,10 @@ class BuildLogWatcher {
             vscode.window.showInformationMessage('Already watching build log files.');
             return;
         }
+
+        // We don't actually care about the results, but we run it to validate the config 
+        // and show warnings if there are config issues.
+        this.getMatchedFiles(true);
 
         this.updateWatchersAndParseMostRecentLog(true);
 
