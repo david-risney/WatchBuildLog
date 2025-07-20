@@ -1,14 +1,11 @@
 # WatchBuildLog VS Code Extension
 
-A Visual Studio Code extension that monitors build log files for errors and displays them in VS Code's Problems panel for quick identification and navigation.
+A Visual Studio Code extension that monitors build log files for errors and displays them in VS Code's Problems panel.
 
-## Features
-
-- **Real-time monitoring**: Watches build log files for changes and automatically parses new content
-- **Error detection**: Configurable regex patterns to identify different types of build errors
-- **VS Code integration**: Displays errors in the Problems panel with clickable links to source files
-- **File navigation**: Jump directly to error locations when file paths and line numbers are available
-- **Multiple log formats**: Supports common build log formats from various compilers and build systems
+- **Auto monitoring**: Watches build log files for changes and automatically parses new content
+- **Custom wildcard log paths**: Configurable paths to log files including wildcard patterns.
+- **Custom problem patterns**: Configurable problem matcher patterns to identify different types of build errors with file locations, line numbers, and severity
+- **VS Code integration**: Displays errors in the Problems panel with clickable links to source files. Also supports related information for errors.
 
 ## Commands
 
@@ -23,7 +20,7 @@ Configure the extension through VS Code settings:
 
 ### `watchbuildlog.logFilePathWildcards`
 - **Type**: `array`
-- **Default**: `[]`
+- **Default**: `["out/*/siso_output"]`
 - **Description**: Glob-style wildcard patterns for build log files. Patterns can be absolute paths or relative to the project root. Use '*' to match any text in a folder segment.
 - **Scope**: Resource (can be set per workspace)
 - **Examples**: 
@@ -33,32 +30,22 @@ Configure the extension through VS Code settings:
 
 ### `watchbuildlog.autoStart`
 - **Type**: `boolean`
-- **Default**: `false`
+- **Default**: `true`
 - **Description**: Automatically start watching when VS Code opens
 
-### `watchbuildlog.errorPatterns`
+### `watchbuildlog.problemMatcherPatterns`
 - **Type**: `array`
-- **Default**: `["error:", "Error:", "ERROR:", "fatal error:", "Fatal Error:"]`
-- **Description**: Regex patterns to identify error lines in build logs
-
-## Supported Error Formats
-
-The extension can parse common error formats including:
-
-- GCC/Clang: `filename.cpp:123:45: error: message`
-- MSVC: `filename.cpp(123,45): error: message`
-- Generic: `filename.cpp(123): error: message`
-- Simple: Lines containing configured error patterns
+- **Description**: Problem matcher patterns similar to VS Code's task system. Each pattern defines a regex and capture group indices for extracting error information from build logs.
 
 ## Usage
 
 1. **Configure log file patterns**: 
    - Open VS Code Settings (`Ctrl+,`)
    - Search for "watchbuildlog"
-   - Add wildcard patterns to "Log File Path Wildcards"
+   - Add wildcard patterns to "Log File Path Wildcards" (default includes `"out/*/siso_output"`)
    - Or add to your `settings.json`: `"watchbuildlog.logFilePathWildcards": ["out/*_x64/siso.log", "build/*/errors.log"]`
 
-2. **Start watching**: Run "Start Watching Build Log" command or enable auto-start
+2. **Start watching**: The extension auto-starts by default, or run "Start Watching Build Log" command manually
 
 3. **View errors**: Build errors will appear in the Problems panel (`Ctrl+Shift+M`)
 
@@ -80,7 +67,16 @@ The extension can parse common error formats including:
        "C:/absolute/path/to/build.log"
      ],
      "watchbuildlog.autoStart": true,
-     "watchbuildlog.errorPatterns": ["error:", "Error:", "ERROR:"]
+     "watchbuildlog.problemMatcherPatterns": [
+       {
+         "regexp": "^(.*)\\((\\d+),(\\d+)\\)\\s*:\\s*([^: ]+)[^:]*:\\s*(.*)$",
+         "file": 1,
+         "line": 2,
+         "column": 3,
+         "severity": 4,
+         "message": 5
+       }
+     ]
    }
    ```
 
@@ -106,19 +102,6 @@ The extension can parse common error formats including:
 
 - Visual Studio Code 1.74.0 or higher
 
-## Extension Development
-
-### Project Structure
-```
-├── src/
-│   └── extension.js         # Main extension code
-├── package.json             # Extension manifest
-└── README.md               # This file
-```
-
-### Build Commands
-- No build step required! The extension runs directly from JavaScript.
-
 ## Contributing
 
 1. Fork the repository
@@ -130,11 +113,3 @@ The extension can parse common error formats including:
 ## License
 
 This project is licensed under the MIT License.
-
-## Release Notes
-
-### 0.0.1
-- Initial release
-- Basic log file watching functionality
-- Error parsing and display in Problems panel
-- Configurable error patterns
