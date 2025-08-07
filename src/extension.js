@@ -65,31 +65,32 @@ class BuildLogWatcher {
         const wildcards = config.get('logFilePathWildcards') || [];
         const problemPatterns = config.get('problemMatcherPatterns') || [];
 
-        if (wildcards.length === 0) {
+        if (wildcards.length === 0 && showWarnings) {
             vscode.window.showErrorMessage('No build log file patterns configured. Please set "watchbuildlog.logFilePathWildcards" in your settings.');
-            return;
+            return [];
         }
-        if (problemPatterns.length === 0) {
+        if (problemPatterns.length === 0 && showWarnings) {
             vscode.window.showErrorMessage('No problem matcher patterns configured. Please set "watchbuildlog.problemMatcherPatterns" in your settings.');
-            return;
+            return [];
         }
 
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
-        if (!workspaceRoot) {
+        if (!workspaceRoot && showWarnings) {
             vscode.window.showWarningMessage('No workspace folder open. Cannot resolve relative paths.');
         }
 
         const matchedFiles = this.findMatchingFiles(wildcards, workspaceRoot);
+
+        if (matchedFiles.length === 0 && showWarnings) {
+            vscode.window.showWarningMessage('No files found matching the configured wildcard patterns.');
+            return [];
+        }
+
         return matchedFiles;
     }
 
     updateWatchersAndParseMostRecentLog(fileChanged = false) {
         const matchedFiles = this.getMatchedFiles(false);
-
-        if (matchedFiles.length === 0) {
-            vscode.window.showWarningMessage('No files found matching the configured wildcard patterns.');
-            return;
-        }
 
         // For each this.watchers, check if its not in matchedFiles and if so, remove it
         let fileSetChange = false;
@@ -255,12 +256,21 @@ class BuildLogWatcher {
         }
     }
 
+    stripAnsiSequences(input) {
+        // Ansi escape sequences look like:
+        // \x1B[31m for red text
+        // \x1B[0m to reset
+        // \x1B[K to clear line
+        // Or generally like \x1B[<codes>m or \x1B[<codes>K
+        return input.replace(/\x1B\[[0-9;]*[mK]/g, '');
+    }
+
     parseLogFile(logFilePath) {
         try {
             const content = fs.readFileSync(logFilePath, 'utf8');
             // Handle CRLF and LF line endings. Remove any CR and then delimit by LF.
             // This also works for mixed line endings.
-            const lines = content.replace('\r', '').split('\n');
+            const lines = this.stripAnsiSequences(content).replace('\r', '').split('\n');
             const config = vscode.workspace.getConfiguration('watchbuildlog');
             const problemPatterns = config.get('problemMatcherPatterns') || [];
 
@@ -329,7 +339,8 @@ class BuildLogWatcher {
 
             // Set new diagnostics
             diagnosticsMap.forEach((diagnostics, filePath) => {
-                this.diagnostics.set(vscode.Uri.file(filePath), diagnostics);
+                const uniqueDiagnostics = this.removeDuplicateDiagnostics(diagnostics);
+                this.diagnostics.set(vscode.Uri.file(filePath), uniqueDiagnostics);
             });
 
             log(`Found ${Array.from(diagnosticsMap.values()).reduce((sum, diags) => sum + diags.length, 0)} total errors/warnings`);
@@ -339,6 +350,22 @@ class BuildLogWatcher {
             log(`Error parsing log file ${logFilePath}:`, error);
             vscode.window.showErrorMessage(`Failed to parse log file: ${error}`);
         }
+    }
+
+    removeDuplicateDiagnostics(diagnostics) {
+        const uniqueDiagnostics = [];
+        const seen = new Set();
+        diagnostics.forEach(diagnostic => {
+            const key = `${diagnostic.range.start.line}-${diagnostic.range.start.character}-${diagnostic.message}-${diagnostic.severity}`;
+
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueDiagnostics.push(diagnostic);
+            } else {
+                // Else skip. Assume that related information is also duplicated.
+            }
+        });
+        return uniqueDiagnostics;
     }
 
     parseErrorLine(line, problemPatterns) {
